@@ -336,7 +336,7 @@ export default function Home() {
         setEditingProduct(product);
         setSelectedBrand(product.brand);
         setNewModel(product.model);
-        setNewSpecs(product.specs);
+        setNewSpecs(product.specs || "");
         setNewPrice(product.price_float.toString());
         setIsEditProductDialogOpen(true);
     };
@@ -354,7 +354,12 @@ export default function Home() {
         }
 
         const priceStr = `RD$${priceFloat.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
-        const newId = `${selectedBrand}-${newModel}-${newSpecs}`.toUpperCase().replace(/\s+/g, '-');
+
+        // Ensure consistent ID generation even with empty specs
+        let rawId = `${selectedBrand}-${newModel}`;
+        if (newSpecs) rawId += `-${newSpecs}`;
+
+        const newId = rawId.toUpperCase().replace(/\s+/g, '-');
 
         const updatedProduct: Product = {
             id: newId,
@@ -366,16 +371,12 @@ export default function Home() {
         };
 
         try {
-            // If ID changed, we need to delete the old one first (or just leave it if we wanted to copy, but here we want to Edit)
-            // However, our API upsert will create a NEW one if ID is different.
-            // So if newID !== editingProduct.id, we should DELETE editingProduct.id
-
+            // Delete old if ID changed
             if (newId !== editingProduct.id) {
-                // Delete old
                 await fetch(`/api/inventory?id=${encodeURIComponent(editingProduct.id)}`, { method: 'DELETE' });
             }
 
-            // Save new (or update if ID is same)
+            // Upsert (Insert/Update)
             await fetch('/api/inventory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -383,14 +384,9 @@ export default function Home() {
             });
 
             // Update local state
-            setInventory(prev => prev.map(p => p.id === editingProduct.id ? updatedProduct : p)); // This might be wrong if ID changed. 
-            // Better to just filter out old ID and append new, or refresh.
-            // Let's just refresh data to be safe and simple
             fetchData();
 
-            // Also update activeList if the product was in it?
-            // If ID changed, the old one in active list points to nothing (or old data). 
-            // Let's update active list item if it matches old ID
+            // Update active list if it contains the product
             setActiveList(prev => prev.map(p => p.id === editingProduct.id ? updatedProduct : p));
 
             toast.success("Producto actualizado");
@@ -656,7 +652,7 @@ export default function Home() {
                                     <TableRow>
                                         <TableHead>Producto</TableHead>
                                         <TableHead className="text-right">Precio</TableHead>
-                                        <TableHead className="w-[50px]"></TableHead>
+                                        <TableHead className="w-[100px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -670,9 +666,14 @@ export default function Home() {
                                             </TableCell>
                                             <TableCell className="text-right font-mono font-medium">{item.price_str}</TableCell>
                                             <TableCell>
-                                                <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => removeFromActiveList(item.id)}>
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center justify-end">
+                                                    <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-primary" onClick={() => handleEditProductClick(item)}>
+                                                        <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => removeFromActiveList(item.id)}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
