@@ -307,7 +307,25 @@ export default function Home() {
                         </div>
                         <div className="space-y-1">
                             <Label>Specs</Label>
-                            <Input value={newSpecs} onChange={e => setNewSpecs(e.target.value)} placeholder="Ej: 128GB / 8GB" />
+                            <Select value={newSpecs} onValueChange={setNewSpecs}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar Specs" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="64GB">64GB</SelectItem>
+                                    <SelectItem value="128GB">128GB</SelectItem>
+                                    <SelectItem value="256GB">256GB</SelectItem>
+                                    <SelectItem value="512GB">512GB</SelectItem>
+                                    <SelectItem value="1TB">1TB</SelectItem>
+                                    <SelectItem value="4/64">4/64</SelectItem>
+                                    <SelectItem value="4/128">4/128</SelectItem>
+                                    <SelectItem value="6/128">6/128</SelectItem>
+                                    <SelectItem value="8/128">8/128</SelectItem>
+                                    <SelectItem value="8/256">8/256</SelectItem>
+                                    <SelectItem value="12/256">12/256</SelectItem>
+                                    <SelectItem value="12/512">12/512</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                         <div className="space-y-1">
                             <Label>Precio</Label>
