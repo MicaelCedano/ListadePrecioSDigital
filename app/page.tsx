@@ -39,6 +39,7 @@ export default function Home() {
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
     const [isClient, setIsClient] = useState(false);
+    const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
     // Selection State
     const [selectedBrand, setSelectedBrand] = useState<string>("");
@@ -53,41 +54,95 @@ export default function Home() {
     // Initial Mount
     useEffect(() => {
         setIsClient(true);
-        fetchData();
+        // Initialize fetch
+        const init = async () => {
+            await Promise.all([fetchData(), loadSettings()]);
+            setIsSettingsLoaded(true);
+        };
+        init();
+    }, []);
 
-        // Load saved state from local storage safely
+    const loadSettings = async () => {
+        try {
+            const res = await fetch('/api/settings');
+            if (res.ok) {
+                const settings = await res.json();
+                if (settings.activeList) setActiveList(settings.activeList);
+                if (settings.logo) setLogo(settings.logo);
+            }
+        } catch (e) {
+            console.error("Failed to load settings from DB", e);
+            // Fallback to localStorage if DB fails? 
+            // Existing logic below handles localStorage read on mount, but we effectively overwrite it if DB succeeds.
+            // If DB fails, we might want to rely on localStorage.
+            // But let's keep the localStorage logic as a "cache" that runs immediately, 
+            // and DB updates it when ready.
+        }
+    };
+
+    // Load saved state from local storage safely (Instant load, then DB syncs)
+    useEffect(() => {
         if (typeof window !== 'undefined') {
             const savedList = localStorage.getItem('priceList_activeList');
             const savedLogo = localStorage.getItem('priceList_logo');
-
             if (savedList) {
-                try {
-                    setActiveList(JSON.parse(savedList));
-                } catch (e) {
-                    console.error("Failed to parse saved list");
-                }
+                try { setActiveList(JSON.parse(savedList)); } catch (e) { }
             }
-
-            if (savedLogo) {
-                setLogo(savedLogo);
-            }
+            if (savedLogo) setLogo(savedLogo);
         }
     }, []);
 
-    // Save state changes
+    // Save state changes (Sync with DB)
     useEffect(() => {
-        if (!isClient) return;
+        if (!isClient || !isSettingsLoaded) return;
+
         localStorage.setItem('priceList_activeList', JSON.stringify(activeList));
-    }, [activeList, isClient]);
+
+        const timer = setTimeout(async () => {
+            try {
+                console.log("Saving activeList to DB...", activeList.length, "items");
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: 'activeList', value: activeList })
+                });
+                if (!res.ok) throw new Error("Server response not ok");
+                console.log("activeList saved successfully");
+                toast.success("Lista sincronizada en la nube", { duration: 1000, id: 'sync-list-ok' });
+            } catch (e) {
+                console.error("Failed to save activeList to DB", e);
+                toast.error("Error sincronizando lista");
+            }
+        }, 2000); // 2 second debounce
+        return () => clearTimeout(timer);
+    }, [activeList, isClient, isSettingsLoaded]);
 
     useEffect(() => {
-        if (!isClient) return;
+        if (!isClient || !isSettingsLoaded) return;
+
         if (logo) {
             localStorage.setItem('priceList_logo', logo);
         } else {
             localStorage.removeItem('priceList_logo');
         }
-    }, [logo, isClient]);
+
+        const timer = setTimeout(async () => {
+            try {
+                console.log("Saving logo to DB...");
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: 'logo', value: logo })
+                });
+                if (!res.ok) throw new Error("Server response not ok");
+                console.log("Logo saved successfully");
+                toast.success("Logo sincronizado en la nube", { duration: 1000, id: 'sync-logo-ok' });
+            } catch (e) {
+                console.error("Failed to save logo to DB", e);
+            }
+        }, 3000); // 3 second debounce for logo since it's larger
+        return () => clearTimeout(timer);
+    }, [logo, isClient, isSettingsLoaded]);
 
     const fetchData = async () => {
         try {

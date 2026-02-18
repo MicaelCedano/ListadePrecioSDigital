@@ -39,7 +39,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 For the application to work correctly on Vercel, you must set the following environment variables in your Vercel project settings:
 
-- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase URL.
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon Key.
+NEXT_PUBLIC_SUPABASE_URL=https://svzckajjkasgykcrwmfl.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=sb_publishable_vbtyGZrAGUu5_NMEj9LLDA_i-K5hZAk
 
 These variables are required for connecting to the Supabase database.
