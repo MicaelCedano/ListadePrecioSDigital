@@ -50,6 +50,7 @@ next-env.d.ts
 
 # logs
 *.log
+dev_log.txt
 
 # system files
 Thumbs.db
