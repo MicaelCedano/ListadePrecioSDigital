@@ -461,10 +461,6 @@ export default function Home() {
                         <Search className="mr-2 h-4 w-4" /> Buscar en Inventario
                     </Button>
 
-                    <Button variant="outline">
-                        <Save className="mr-2 h-4 w-4" /> Guardar Lista
-                    </Button>
-
                     <div className="relative">
                         <input
                             type="file"
@@ -486,9 +482,6 @@ export default function Home() {
                     <Button variant="default" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleExportImage} disabled={exporting}>
                         {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
                         Generar Imagen
-                    </Button>
-                    <Button variant="destructive" onClick={() => setActiveList([])}>
-                        <Trash2 className="mr-2 h-4 w-4" /> Limpiar Lista
                     </Button>
                 </div>
 
