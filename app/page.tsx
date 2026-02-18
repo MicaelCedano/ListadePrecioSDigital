@@ -278,14 +278,65 @@ export default function Home() {
         }
     };
 
-    // Avoid hydration mismatch by rendering null on server/initial client render
-    if (!isClient) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    // Brand Management State
+    const [isBrandDialogOpen, setIsBrandDialogOpen] = useState(false);
+    const [newBrandName, setNewBrandName] = useState("");
+    const [newBrandColor, setNewBrandColor] = useState("#000000");
+
+    const handleAddBrand = async () => {
+        if (!newBrandName) {
+            toast.error("El nombre de la marca es requerido");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/brands', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newBrandName.toUpperCase(), color: newBrandColor })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "Error creando marca");
+            }
+
+            toast.success("Marca creada exitosamente");
+            setNewBrandName("");
+            setNewBrandColor("#000000");
+            fetchData(); // Refresh data
+        } catch (error: any) {
+            toast.error(error.message);
+        }
+    };
+
+    const handleDeleteBrand = async (brandName: string) => {
+        if (!confirm(`¿Estás seguro de eliminar la marca ${brandName}? Se borrarán todos sus productos.`)) return;
+
+        try {
+            const res = await fetch(`/api/brands?name=${encodeURIComponent(brandName)}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) throw new Error("Error eliminando marca");
+
+            toast.success("Marca eliminada");
+            fetchData(); // Refresh data
+        } catch (error) {
+            toast.error("No se pudo eliminar la marca");
+        }
+    };
 
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
             {/* Sidebar / Controls Panel */}
             <aside className="w-80 border-r bg-card p-4 flex flex-col gap-4 overflow-y-auto">
-                <h1 className="text-xl font-bold mb-4">Gestor de Precios</h1>
+                <div className="flex justify-between items-center mb-4">
+                    <h1 className="text-xl font-bold">Gestor de Precios</h1>
+                    <Button variant="ghost" size="icon" onClick={() => setIsBrandDialogOpen(true)} title="Gestionar Marcas">
+                        <Edit className="h-4 w-4" />
+                    </Button>
+                </div>
 
                 <Card>
                     <CardHeader className="pb-2">
@@ -429,6 +480,60 @@ export default function Home() {
                                 </TableBody>
                             </Table>
                         </ScrollArea>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Brands Dialog */}
+                <Dialog open={isBrandDialogOpen} onOpenChange={setIsBrandDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Gestionar Marcas</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="flex gap-2 items-end">
+                                <div className="space-y-1 flex-1">
+                                    <Label>Nombre de Marca</Label>
+                                    <Input
+                                        value={newBrandName}
+                                        onChange={(e) => setNewBrandName(e.target.value)}
+                                        placeholder="Ej: SAMSUNG"
+                                    />
+                                </div>
+                                <div className="space-y-1 w-20">
+                                    <Label>Color</Label>
+                                    <Input
+                                        type="color"
+                                        value={newBrandColor}
+                                        onChange={(e) => setNewBrandColor(e.target.value)}
+                                        className="h-10 p-1 cursor-pointer"
+                                    />
+                                </div>
+                                <Button onClick={handleAddBrand}>
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </div>
+
+                            <ScrollArea className="h-[300px] border rounded p-2">
+                                <div className="space-y-2">
+                                    {brands.map((brand) => (
+                                        <div key={brand.name} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: brand.color }}></div>
+                                                <span className="font-medium">{brand.name}</span>
+                                            </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-destructive h-8 w-8 p-0"
+                                                onClick={() => handleDeleteBrand(brand.name)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
                     </DialogContent>
                 </Dialog>
             </aside>
