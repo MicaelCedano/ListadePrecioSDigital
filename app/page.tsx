@@ -38,7 +38,7 @@ export default function Home() {
     const [logo, setLogo] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
+    const [isClient, setIsClient] = useState(false);
 
     // Selection State
     const [selectedBrand, setSelectedBrand] = useState<string>("");
@@ -50,44 +50,44 @@ export default function Home() {
     const [inventorySearch, setInventorySearch] = useState("");
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
 
-    // Load Data & Persistence
+    // Initial Mount
     useEffect(() => {
+        setIsClient(true);
         fetchData();
-        // Load saved state from local storage
-        const savedList = localStorage.getItem('priceList_activeList');
-        const savedLogo = localStorage.getItem('priceList_logo');
 
-        if (savedList) {
-            try {
-                setActiveList(JSON.parse(savedList));
-                toast.success("Progreso restaurado");
-            } catch (e) {
-                console.error("Failed to parse saved list");
+        // Load saved state from local storage safely
+        if (typeof window !== 'undefined') {
+            const savedList = localStorage.getItem('priceList_activeList');
+            const savedLogo = localStorage.getItem('priceList_logo');
+
+            if (savedList) {
+                try {
+                    setActiveList(JSON.parse(savedList));
+                } catch (e) {
+                    console.error("Failed to parse saved list");
+                }
+            }
+
+            if (savedLogo) {
+                setLogo(savedLogo);
             }
         }
-
-        if (savedLogo) {
-            setLogo(savedLogo);
-        }
-
-        setIsInitialized(true);
     }, []);
 
     // Save state changes
     useEffect(() => {
-        if (!isInitialized) return;
+        if (!isClient) return;
         localStorage.setItem('priceList_activeList', JSON.stringify(activeList));
-        // Optional: Show saving indicator
-    }, [activeList, isInitialized]);
+    }, [activeList, isClient]);
 
     useEffect(() => {
-        if (!isInitialized) return;
+        if (!isClient) return;
         if (logo) {
             localStorage.setItem('priceList_logo', logo);
         } else {
             localStorage.removeItem('priceList_logo');
         }
-    }, [logo, isInitialized]);
+    }, [logo, isClient]);
 
     const fetchData = async () => {
         try {
@@ -96,15 +96,18 @@ export default function Home() {
                 fetch('/api/brands'),
                 fetch('/api/inventory')
             ]);
+
+            if (!brandsRes.ok || !inventoryRes.ok) throw new Error("Failed to fetch data");
+
             const brandsData = await brandsRes.json();
             const inventoryData = await inventoryRes.json();
 
-            setBrands(brandsData);
-            setInventory(inventoryData);
-            if (brandsData.length > 0) setSelectedBrand(brandsData[0].name);
+            setBrands(brandsData || []);
+            setInventory(inventoryData || []);
+            if (brandsData && brandsData.length > 0) setSelectedBrand(brandsData[0].name);
         } catch (error) {
-            toast.error("Error cargando datos");
             console.error(error);
+            // Don't show toast on initial load to avoid hydration errors or spam
         } finally {
             setLoading(false);
         }
@@ -123,7 +126,7 @@ export default function Home() {
         }
 
         const priceStr = `RD$${priceFloat.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
-        const id = `${selectedBrand}-${newModel}-${newSpecs}`.toUpperCase(); // Simple ID generation
+        const id = `${selectedBrand}-${newModel}-${newSpecs}`.toUpperCase().replace(/\s+/g, '-'); // Cleaner IDs
 
         const newProduct: Product = {
             id,
@@ -274,6 +277,9 @@ export default function Home() {
             setExporting(false);
         }
     };
+
+    // Avoid hydration mismatch by rendering null on server/initial client render
+    if (!isClient) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
