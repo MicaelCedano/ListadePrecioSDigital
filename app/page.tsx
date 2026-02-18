@@ -327,6 +327,86 @@ export default function Home() {
         }
     };
 
+    // Product Editing State
+    const [isEditProductDialogOpen, setIsEditProductDialogOpen] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    // Reuse newModel, newSpecs, newPrice, selectedBrand for editing form as well
+
+    const handleEditProductClick = (product: Product) => {
+        setEditingProduct(product);
+        setSelectedBrand(product.brand);
+        setNewModel(product.model);
+        setNewSpecs(product.specs);
+        setNewPrice(product.price_float.toString());
+        setIsEditProductDialogOpen(true);
+    };
+
+    const handleUpdateProduct = async () => {
+        if (!editingProduct || !selectedBrand || !newModel || !newPrice) {
+            toast.error("Completa los campos obligatorios");
+            return;
+        }
+
+        const priceFloat = parseFloat(newPrice.replace(/[^\d.]/g, ''));
+        if (isNaN(priceFloat)) {
+            toast.error("Precio inválido");
+            return;
+        }
+
+        const priceStr = `RD$${priceFloat.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
+        const newId = `${selectedBrand}-${newModel}-${newSpecs}`.toUpperCase().replace(/\s+/g, '-');
+
+        const updatedProduct: Product = {
+            id: newId,
+            brand: selectedBrand,
+            model: newModel.toUpperCase(),
+            specs: newSpecs.toUpperCase(),
+            price_float: priceFloat,
+            price_str: priceStr
+        };
+
+        try {
+            // If ID changed, we need to delete the old one first (or just leave it if we wanted to copy, but here we want to Edit)
+            // However, our API upsert will create a NEW one if ID is different.
+            // So if newID !== editingProduct.id, we should DELETE editingProduct.id
+
+            if (newId !== editingProduct.id) {
+                // Delete old
+                await fetch(`/api/inventory?id=${encodeURIComponent(editingProduct.id)}`, { method: 'DELETE' });
+            }
+
+            // Save new (or update if ID is same)
+            await fetch('/api/inventory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedProduct)
+            });
+
+            // Update local state
+            setInventory(prev => prev.map(p => p.id === editingProduct.id ? updatedProduct : p)); // This might be wrong if ID changed. 
+            // Better to just filter out old ID and append new, or refresh.
+            // Let's just refresh data to be safe and simple
+            fetchData();
+
+            // Also update activeList if the product was in it?
+            // If ID changed, the old one in active list points to nothing (or old data). 
+            // Let's update active list item if it matches old ID
+            setActiveList(prev => prev.map(p => p.id === editingProduct.id ? updatedProduct : p));
+
+            toast.success("Producto actualizado");
+            setIsEditProductDialogOpen(false);
+
+            // Cleanup form
+            setEditingProduct(null);
+            setNewModel("");
+            setNewSpecs("");
+            setNewPrice("");
+        } catch (error) {
+            toast.error("Error actualizando producto");
+            console.error(error);
+        }
+    };
+
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
             {/* Sidebar / Controls Panel */}
@@ -435,7 +515,7 @@ export default function Home() {
                                         <TableHead>Modelo</TableHead>
                                         <TableHead>Specs</TableHead>
                                         <TableHead className="text-right">Precio</TableHead>
-                                        <TableHead className="w-[50px]"></TableHead>
+                                        <TableHead className="w-[100px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -446,9 +526,14 @@ export default function Home() {
                                             <TableCell className="text-muted-foreground">{item.specs}</TableCell>
                                             <TableCell className="text-right font-mono text-green-500">{item.price_str}</TableCell>
                                             <TableCell>
-                                                <Button size="icon" variant="ghost" onClick={() => addToActiveList(item)}>
-                                                    <Plus className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center">
+                                                    <Button size="icon" variant="ghost" onClick={() => handleEditProductClick(item)} title="Editar">
+                                                        <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button size="icon" variant="ghost" onClick={() => addToActiveList(item)} title="Agregar a Lista">
+                                                        <Plus className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -462,6 +547,47 @@ export default function Home() {
                                 </TableBody>
                             </Table>
                         </ScrollArea>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Edit Product Dialog */}
+                <Dialog open={isEditProductDialogOpen} onOpenChange={setIsEditProductDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Editar Producto</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3 py-4">
+                            <div className="space-y-1">
+                                <Label>Marca</Label>
+                                <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Seleccionar Marca" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {brands.map(brand => (
+                                            <SelectItem key={brand.name} value={brand.name}>
+                                                {brand.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Modelo</Label>
+                                <Input value={newModel} onChange={e => setNewModel(e.target.value)} placeholder="Ej: GALAXY S24" />
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Specs</Label>
+                                <Input value={newSpecs} onChange={e => setNewSpecs(e.target.value)} placeholder="Ej: 128GB" />
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Precio</Label>
+                                <Input value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="Ej: 45000" type="number" />
+                            </div>
+                            <Button onClick={handleUpdateProduct} className="w-full">
+                                Guardar Cambios
+                            </Button>
+                        </div>
                     </DialogContent>
                 </Dialog>
 
@@ -522,7 +648,7 @@ export default function Home() {
 
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col min-w-0 bg-muted/20 p-6 gap-6 overflow-hidden">
-
+                {/* ... rest of the main content ... */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
                     {/* Active List Panel */}
                     <Card className="flex flex-col h-full overflow-hidden border-0 shadow-lg bg-card/50 backdrop-blur-sm">
