@@ -13,6 +13,23 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Edit, Plus, GripVertical, Search, Download, Image as ImageIcon, Save, Loader2, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Types
 type Brand = {
@@ -242,8 +259,8 @@ export default function Home() {
         return acc;
     }, {} as Record<string, Product[]>);
 
-    // Sort groups by brand order
-    const sortedBrands = brands.sort((a, b) => a.order_index - b.order_index).map(b => b.name);
+    // Sort groups by brand order (brands state is already kept in order)
+    const sortedBrands = brands.map(b => b.name);
     const sortedGroupKeys = Object.keys(groupedActiveList).sort((a, b) => {
         const idxA = sortedBrands.indexOf(a);
         const idxB = sortedBrands.indexOf(b);
@@ -337,6 +354,44 @@ export default function Home() {
     const [isBrandDialogOpen, setIsBrandDialogOpen] = useState(false);
     const [newBrandName, setNewBrandName] = useState("");
     const [newBrandColor, setNewBrandColor] = useState("#000000");
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleBrandReorder = async (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (over && active.id !== over.id) {
+            const oldIndex = brands.findIndex((b) => b.name === active.id);
+            const newIndex = brands.findIndex((b) => b.name === over.id);
+
+            const newOrderedBrands = arrayMove(brands, oldIndex, newIndex);
+            setBrands(newOrderedBrands);
+
+            // Save to DB
+            try {
+                const res = await fetch('/api/brands', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'reorder',
+                        brands: newOrderedBrands.map(b => b.name)
+                    })
+                });
+
+                if (!res.ok) throw new Error("Error guardando el orden");
+                toast.success("Orden de marcas actualizado");
+            } catch (error) {
+                console.error(error);
+                toast.error("Error al sincronizar el orden de las marcas");
+                fetchData(); // Rollback
+            }
+        }
+    };
 
     const handleAddBrand = async () => {
         if (!newBrandName) {
@@ -665,25 +720,27 @@ export default function Home() {
                                 </Button>
                             </div>
 
-                            <ScrollArea className="h-[300px] border rounded p-2">
-                                <div className="space-y-2">
-                                    {brands.map((brand) => (
-                                        <div key={brand.name} className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: brand.color }}></div>
-                                                <span className="font-medium">{brand.name}</span>
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-destructive h-8 w-8 p-0"
-                                                onClick={() => handleDeleteBrand(brand.name)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                            <ScrollArea className="h-[400px] border rounded p-2">
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCenter}
+                                    onDragEnd={handleBrandReorder}
+                                >
+                                    <SortableContext
+                                        items={brands.map(b => b.name)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        <div className="space-y-2">
+                                            {brands.map((brand) => (
+                                                <SortableBrandItem
+                                                    key={brand.name}
+                                                    brand={brand}
+                                                    onDelete={() => handleDeleteBrand(brand.name)}
+                                                />
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
+                                    </SortableContext>
+                                </DndContext>
                             </ScrollArea>
                         </div>
                     </DialogContent>
@@ -834,6 +891,52 @@ export default function Home() {
                     </Card>
                 </div>
             </main>
+        </div>
+    );
+}
+
+function SortableBrandItem({ brand, onDelete }: { brand: Brand, onDelete: () => void }) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: brand.name });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 10 : 1,
+        opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className="flex items-center justify-between p-2 bg-muted rounded border group"
+        >
+            <div className="flex items-center gap-2">
+                <button
+                    className="cursor-grab active:cursor-grabbing text-muted-foreground p-1 hover:bg-muted-foreground/10 rounded"
+                    {...attributes}
+                    {...listeners}
+                >
+                    <GripVertical className="h-4 w-4" />
+                </button>
+                <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: brand.color }}></div>
+                <span className="font-medium">{brand.name}</span>
+            </div>
+            <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive h-8 w-8 p-0"
+                onClick={onDelete}
+            >
+                <Trash2 className="h-4 w-4" />
+            </Button>
         </div>
     );
 }
