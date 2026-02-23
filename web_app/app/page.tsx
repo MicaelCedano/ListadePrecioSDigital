@@ -10,9 +10,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Trash2, Edit, Plus, GripVertical, Search, Download, Image as ImageIcon, Save, Loader2, Upload, X } from 'lucide-react';
+import { Trash2, Edit, Plus, GripVertical, Search, Download, Image as ImageIcon, Save, Loader2, Upload, X, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
+
+// DnD Kit imports
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+    useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Types
 type Brand = {
@@ -30,6 +49,45 @@ type Product = {
     price_str: string;
 };
 
+function SortableBrandItem({ brand, onDelete }: { brand: Brand; onDelete: (name: string) => void }) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: brand.name });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 50 : 'auto',
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={`flex items-center gap-3 p-3 bg-card border rounded-lg shadow-sm ${isDragging ? 'opacity-50 ring-2 ring-primary' : ''}`}
+        >
+            <div {...attributes} {...listeners} className="cursor-grab hover:text-primary transition-colors">
+                <GripVertical className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="w-6 h-6 rounded-full border" style={{ backgroundColor: brand.color }} />
+            <span className="flex-1 font-medium">{brand.name}</span>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => onDelete(brand.name)}
+            >
+                <Trash2 className="h-4 w-4" />
+            </Button>
+        </div>
+    );
+}
+
 export default function Home() {
     // State
     const [brands, setBrands] = useState<Brand[]>([]);
@@ -45,6 +103,11 @@ export default function Home() {
     const [newModel, setNewModel] = useState("");
     const [newSpecs, setNewSpecs] = useState("");
     const [newPrice, setNewPrice] = useState("");
+
+    // Brand Management State
+    const [isBrandsDialogOpen, setIsBrandsDialogOpen] = useState(false);
+    const [newBrandName, setNewBrandName] = useState("");
+    const [newBrandColor, setNewBrandColor] = useState("#3b82f6");
 
     // Filter Inventory Dialog State
     const [inventorySearch, setInventorySearch] = useState("");
@@ -107,6 +170,85 @@ export default function Home() {
             console.error(error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEndBrands = async (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (over && active.id !== over.id) {
+            const oldIndex = brands.findIndex((b) => b.name === active.id);
+            const newIndex = brands.findIndex((b) => b.name === over.id);
+
+            const newBrands = arrayMove(brands, oldIndex, newIndex).map((brand, index) => ({
+                ...brand,
+                order_index: index
+            }));
+
+            setBrands(newBrands);
+
+            try {
+                await fetch('/api/brands', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ brands: newBrands })
+                });
+                toast.success("Orden de marcas actualizado");
+            } catch (error) {
+                toast.error("Error al guardar el orden");
+                fetchData(); // Revert on failure
+            }
+        }
+    };
+
+    const handleAddBrand = async () => {
+        if (!newBrandName.trim()) {
+            toast.error("Ingrese un nombre para la marca");
+            return;
+        }
+
+        const name = newBrandName.trim().toUpperCase();
+        if (brands.some(b => b.name === name)) {
+            toast.error("Esta marca ya existe");
+            return;
+        }
+
+        const newBrand: Brand = {
+            name,
+            color: newBrandColor,
+            order_index: brands.length
+        };
+
+        try {
+            await fetch('/api/brands', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newBrand)
+            });
+            setBrands([...brands, newBrand]);
+            setNewBrandName("");
+            toast.success("Marca agregada");
+        } catch (error) {
+            toast.error("Error al agregar marca");
+        }
+    };
+
+    const handleDeleteBrand = async (name: string) => {
+        try {
+            await fetch(`/api/brands?name=${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            });
+            setBrands(brands.filter(b => b.name !== name));
+            toast.success("Marca eliminada");
+        } catch (error) {
+            toast.error("Error al eliminar marca");
         }
     };
 
@@ -185,7 +327,7 @@ export default function Home() {
     }, {} as Record<string, Product[]>);
 
     // Sort groups by brand order
-    const sortedBrands = brands.sort((a, b) => a.order_index - b.order_index).map(b => b.name);
+    const sortedBrands = [...brands].sort((a, b) => a.order_index - b.order_index).map(b => b.name);
     const sortedGroupKeys = Object.keys(groupedActiveList).sort((a, b) => {
         const idxA = sortedBrands.indexOf(a);
         const idxB = sortedBrands.indexOf(b);
@@ -328,6 +470,10 @@ export default function Home() {
                         <Save className="mr-2 h-4 w-4" /> Guardar Lista
                     </Button>
 
+                    <Button variant="outline" onClick={() => setIsBrandsDialogOpen(true)}>
+                        <Palette className="mr-2 h-4 w-4" /> Gestionar Marcas
+                    </Button>
+
                     <div className="relative">
                         <input
                             type="file"
@@ -404,6 +550,71 @@ export default function Home() {
                                     )}
                                 </TableBody>
                             </Table>
+                        </ScrollArea>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Brands Management Dialog */}
+                <Dialog open={isBrandsDialogOpen} onOpenChange={setIsBrandsDialogOpen}>
+                    <DialogContent className="max-w-md h-[80vh] flex flex-col">
+                        <DialogHeader>
+                            <DialogTitle>Gestionar y Ordenar Marcas</DialogTitle>
+                        </DialogHeader>
+
+                        <div className="space-y-4 py-4 border-b">
+                            <div className="flex gap-2">
+                                <div className="flex-1 space-y-1">
+                                    <Label>Nueva Marca</Label>
+                                    <Input
+                                        placeholder="Nombre (ej: SAMSUNG)"
+                                        value={newBrandName}
+                                        onChange={(e) => setNewBrandName(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddBrand()}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label>Color</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            type="color"
+                                            className="w-12 h-10 p-1 cursor-pointer"
+                                            value={newBrandColor}
+                                            onChange={(e) => setNewBrandColor(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex items-end">
+                                    <Button size="icon" onClick={handleAddBrand}>
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <ScrollArea className="flex-1 pt-4">
+                            <DndContext
+                                sensors={sensors}
+                                collisionDetection={closestCenter}
+                                onDragEnd={handleDragEndBrands}
+                            >
+                                <SortableContext
+                                    items={brands.map(b => b.name)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    <div className="space-y-2 pb-6">
+                                        {brands.map((brand) => (
+                                            <SortableBrandItem
+                                                key={brand.name}
+                                                brand={brand}
+                                                onDelete={handleDeleteBrand}
+                                            />
+                                        ))}
+                                        {brands.length === 0 && (
+                                            <p className="text-center text-muted-foreground py-10">No hay marcas registradas.</p>
+                                        )}
+                                    </div>
+                                </SortableContext>
+                            </DndContext>
                         </ScrollArea>
                     </DialogContent>
                 </Dialog>
